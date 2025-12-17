@@ -24,7 +24,8 @@ from app.api.v1.endpoints import (
     emails,
     resume,
     search,
-    video_calls
+    video_calls,
+    escrow
 )
 
 api_router = APIRouter()
@@ -181,4 +182,11 @@ api_router.include_router(
     video_calls.router,
     prefix="/video-calls",
     tags=["Video Calls"]
+)
+
+# Payment Escrow routes
+api_router.include_router(
+    escrow.router,
+    prefix="/escrow",
+    tags=["Payment Escrow"]
 )
