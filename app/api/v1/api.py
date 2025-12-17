@@ -20,7 +20,8 @@ from app.api.v1.endpoints import (
     push_notifications,
     whatsapp,
     career,
-    aptitude
+    aptitude,
+    emails
 )
 
 api_router = APIRouter()
@@ -149,4 +150,11 @@ api_router.include_router(
     aptitude.router,
     prefix="/aptitude",
     tags=["Aptitude Tests"]
+)
+
+# Email Notifications routes
+api_router.include_router(
+    emails.router,
+    prefix="/emails",
+    tags=["Email Notifications"]
 )
