@@ -22,7 +22,8 @@ from app.api.v1.endpoints import (
     career,
     aptitude,
     emails,
-    resume
+    resume,
+    search
 )
 
 api_router = APIRouter()
@@ -165,4 +166,11 @@ api_router.include_router(
     resume.router,
     prefix="/resume",
     tags=["Resume Parser"]
+)
+
+# Elasticsearch Search routes
+api_router.include_router(
+    search.router,
+    prefix="/search",
+    tags=["Search"]
 )
