@@ -23,7 +23,8 @@ from app.api.v1.endpoints import (
     aptitude,
     emails,
     resume,
-    search
+    search,
+    video_calls
 )
 
 api_router = APIRouter()
@@ -173,4 +174,11 @@ api_router.include_router(
     search.router,
     prefix="/search",
     tags=["Search"]
+)
+
+# Video Calls routes
+api_router.include_router(
+    video_calls.router,
+    prefix="/video-calls",
+    tags=["Video Calls"]
 )
