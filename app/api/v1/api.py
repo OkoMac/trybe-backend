@@ -21,7 +21,8 @@ from app.api.v1.endpoints import (
     whatsapp,
     career,
     aptitude,
-    emails
+    emails,
+    resume
 )
 
 api_router = APIRouter()
@@ -157,4 +158,11 @@ api_router.include_router(
     emails.router,
     prefix="/emails",
     tags=["Email Notifications"]
+)
+
+# Resume Parser routes
+api_router.include_router(
+    resume.router,
+    prefix="/resume",
+    tags=["Resume Parser"]
 )
