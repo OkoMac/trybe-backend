@@ -1,87 +1,134 @@
-"""Trybe Backend - FastAPI Application"""
+"""
+Trybe Platform - Main Application Entry Point
+FastAPI application with all endpoints and middleware
+"""
 
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import logging
-import sys
+import os
 
-from app.core.config import settings
+# Import routers
 from app.api.v1.api import api_router
-from app.core.security_headers import add_security_headers, add_cors_headers
-from app.core.rate_limit import add_rate_limit_headers
-from app.core.sentry import init_sentry
-
-# Initialize Sentry for error tracking
-init_sentry()
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG if settings.DEBUG else logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-
 logger = logging.getLogger(__name__)
+
+# Application metadata
+APP_NAME = os.getenv("APP_NAME", "Trybe Platform")
+APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+# Sentry integration
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN and os.getenv("ENABLE_SENTRY", "true").lower() == "true":
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            environment=ENVIRONMENT,
+            integrations=[
+                FastApiIntegration(),
+                SqlalchemyIntegration(),
+            ],
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+        )
+        logger.info("Sentry initialized successfully")
+    except Exception as e:
+        logger.warning(f"Failed to initialize Sentry: {e}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
-    logger.info("🚀 Starting Trybe API...")
-    logger.info(f"Environment: {settings.ENVIRONMENT}")
-    logger.info(f"Version: {settings.VERSION}")
-    logger.info(f"Debug mode: {settings.DEBUG}")
-    logger.info(f"Sentry enabled: {bool(settings.SENTRY_DSN)}")
+    logger.info(f"Starting {APP_NAME} v{APP_VERSION}")
+    logger.info(f"Environment: {ENVIRONMENT}")
+    logger.info(f"Debug mode: {DEBUG}")
 
-    # TODO: Initialize database connection pool
-    # TODO: Initialize Redis connection
-    # TODO: Run startup tasks
+    # Initialize Elasticsearch indices if enabled
+    if os.getenv("ENABLE_ELASTICSEARCH", "true").lower() == "true":
+        try:
+            from app.services.elasticsearch_service import elasticsearch_service
+            logger.info("Elasticsearch service initialized")
+        except Exception as e:
+            logger.warning(f"Elasticsearch initialization failed: {e}")
 
     yield
 
     # Shutdown
-    logger.info("👋 Shutting down Trybe API...")
-    # TODO: Close database connections
-    # TODO: Close Redis connections
+    logger.info(f"Shutting down {APP_NAME}")
+
+    # Close Elasticsearch connection
+    try:
+        from app.services.elasticsearch_service import elasticsearch_service
+        await elasticsearch_service.close()
+        logger.info("Elasticsearch connection closed")
+    except:
+        pass
 
 
 # Create FastAPI application
 app = FastAPI(
-    title=settings.APP_NAME,
-    version=settings.APP_VERSION,
-    description="Trybe People's Market - Backend API",
-    docs_url="/docs" if not settings.is_production else None,
-    redoc_url="/redoc" if not settings.is_production else None,
-    lifespan=lifespan
+    title=APP_NAME,
+    description="A comprehensive opportunity marketplace and talent management platform",
+    version=APP_VERSION,
+    debug=DEBUG,
+    lifespan=lifespan,
+    docs_url="/docs" if DEBUG or ENVIRONMENT == "development" else None,
+    redoc_url="/redoc" if DEBUG or ENVIRONMENT == "development" else None,
 )
 
 # CORS Middleware
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.get_cors_origins(),
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"]
 )
 
-# Trusted Host Middleware (production only)
-if settings.is_production:
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=["trybe.app", "*.trybe.app", "api.trybe.app"]
-    )
+# GZip Middleware for response compression
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# Security Headers Middleware
-app.middleware("http")(add_security_headers)
-app.middleware("http")(add_cors_headers)
+# Include API router
+app.include_router(api_router, prefix="/api/v1")
 
-# Rate Limit Headers Middleware
-app.middleware("http")(add_rate_limit_headers)
+
+# Root endpoint
+@app.get("/", tags=["Root"])
+async def root():
+    """Root endpoint - API information"""
+    return {
+        "name": APP_NAME,
+        "version": APP_VERSION,
+        "status": "running",
+        "environment": ENVIRONMENT,
+        "docs": "/docs" if DEBUG or ENVIRONMENT == "development" else "disabled",
+        "endpoints": {
+            "auth": "/api/v1/auth",
+            "opportunities": "/api/v1/opportunities",
+            "payments": "/api/v1/payments",
+            "escrow": "/api/v1/escrow",
+            "messages": "/api/v1/messages",
+            "notifications": "/api/v1/notifications",
+            "learning": "/api/v1/learning",
+            "search": "/api/v1/search",
+            "video-calls": "/api/v1/video-calls",
+        }
+    }
 
 
 # Health check endpoint
@@ -90,68 +137,41 @@ async def health_check():
     """Health check endpoint for monitoring"""
     return {
         "status": "healthy",
-        "environment": settings.ENVIRONMENT,
-        "version": settings.APP_VERSION
+        "service": APP_NAME,
+        "version": APP_VERSION,
+        "environment": ENVIRONMENT
     }
 
 
-@app.get("/health/ready", tags=["Health"])
+# Readiness check
+@app.get("/ready", tags=["Health"])
 async def readiness_check():
-    """Readiness check - verifies all dependencies are ready"""
-    # TODO: Check database connection
-    # TODO: Check Redis connection
-    return {
-        "status": "ready",
-        "database": "connected",
-        "redis": "connected"
-    }
-
-
-# Root endpoint
-@app.get("/", tags=["Root"])
-async def root():
-    """API root endpoint"""
-    return {
-        "message": "Welcome to Trybe API",
-        "version": settings.APP_VERSION,
-        "docs": "/docs" if not settings.is_production else "disabled",
-        "health": "/health"
-    }
-
-
-# Include API v1 routes
-app.include_router(api_router, prefix="/api/v1")
-
-# Future route includes:
-# TODO: Include opportunities routes
-# TODO: Include payments routes
-# TODO: Include learning routes
-# TODO: Include messages routes
-# TODO: Include performance routes
-# TODO: Include reports routes
-# TODO: Include solar routes
+    """Readiness check for Kubernetes/Docker"""
+    # TODO: Add database connection check
+    # TODO: Add Redis connection check
+    # TODO: Add Elasticsearch connection check
+    return {"status": "ready"}
 
 
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler with Sentry integration"""
-    # Log the error
+    """Global exception handler"""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
 
-    # Sentry's FastAPI integration will automatically capture this
-    # But we can add additional context if needed
-    from app.core.sentry import capture_exception
-    capture_exception(exc, url=str(request.url), method=request.method)
-
-    return JSONResponse(
-        status_code=500,
-        content={
-            "success": False,
-            "message": "Internal server error",
-            "error": str(exc) if settings.DEBUG else "An error occurred"
-        }
-    )
+    if DEBUG:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": str(exc),
+                "type": type(exc).__name__
+            }
+        )
+    else:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"}
+        )
 
 
 if __name__ == "__main__":
@@ -159,8 +179,8 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=settings.DEBUG,
-        log_level="debug" if settings.DEBUG else "info"
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", 8000)),
+        reload=DEBUG,
+        log_level="info" if DEBUG else "warning"
     )

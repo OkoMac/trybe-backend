@@ -3,208 +3,163 @@ version: '3.8'
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:16-alpine
+    image: postgres:15-alpine
     container_name: trybe-postgres
     environment:
-      POSTGRES_DB: ${DB_NAME:-trybe_db}
-      POSTGRES_USER: ${DB_USER:-trybe_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-trybe_password_dev}
-      PGDATA: /var/lib/postgresql/data/pgdata
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+      POSTGRES_USER: ${DB_USER:-trybe}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-trybe_password}
+      POSTGRES_DB: ${DB_NAME:-trybe}
     ports:
       - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - trybe-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-trybe_user} -d ${DB_NAME:-trybe_db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-trybe}"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - trybe-network
-    restart: unless-stopped
 
-  # Redis Cache
+  # Redis (for caching and background tasks)
   redis:
     image: redis:7-alpine
     container_name: trybe-redis
-    command: >
-      redis-server
-      --appendonly yes
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-      --requirepass ${REDIS_PASSWORD:-redis_password_dev}
-    volumes:
-      - redis_data:/data
+    command: redis-server --appendonly yes
     ports:
       - "${REDIS_PORT:-6379}:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
+    volumes:
+      - redis_data:/data
     networks:
       - trybe-network
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # FastAPI Backend (Development)
-  backend:
+  # Elasticsearch (for search functionality)
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: trybe-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - trybe-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # FastAPI Application
+  api:
     build:
       context: .
-      dockerfile: Dockerfile.dev
-    container_name: trybe-backend
-    environment:
-      # Database
-      DATABASE_URL: postgresql+asyncpg://${DB_USER:-trybe_user}:${DB_PASSWORD:-trybe_password_dev}@postgres:5432/${DB_NAME:-trybe_db}
-      DB_ECHO: ${DB_ECHO:-false}
-
-      # Redis
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password_dev}@redis:6379/0
-
-      # JWT
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 15
-      REFRESH_TOKEN_EXPIRE_DAYS: 7
-
-      # API Keys
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      STRIPE_API_KEY: ${STRIPE_API_KEY:-}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-
-      # Email
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-
-      # WhatsApp (Twilio)
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
-      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
-      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER:-}
-
-      # App Settings
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      DEBUG: ${DEBUG:-true}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
-
-      # Sentry
-      SENTRY_DSN: ${SENTRY_DSN:-}
-    volumes:
-      - ./app:/app/app
-      - ./alembic:/app/alembic
-      - ./tests:/app/tests
+      dockerfile: Dockerfile
+    container_name: trybe-api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${API_PORT:-8000}:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-trybe}:${DB_PASSWORD:-trybe_password}@postgres:5432/${DB_NAME:-trybe}
+      - REDIS_URL=redis://redis:6379/0
+      - ELASTICSEARCH_HOST=elasticsearch:9200
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-true}
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
     networks:
       - trybe-network
     restart: unless-stopped
-    command: >
-      sh -c "
-        echo 'Waiting for database...' &&
-        sleep 5 &&
-        echo 'Running migrations...' &&
-        alembic upgrade head &&
-        echo 'Starting server...' &&
-        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
-      "
 
-  # Celery Worker (Background Tasks)
+  # Celery Worker (for background tasks) - Optional
   celery-worker:
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: trybe-celery-worker
+    command: celery -A app.celery_app worker --loglevel=info
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER:-trybe_user}:${DB_PASSWORD:-trybe_password_dev}@postgres:5432/${DB_NAME:-trybe_db}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password_dev}@redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      STRIPE_API_KEY: ${STRIPE_API_KEY:-}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-trybe}:${DB_PASSWORD:-trybe_password}@postgres:5432/${DB_NAME:-trybe}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
     volumes:
-      - ./app:/app/app
+      - .:/app
     depends_on:
       - postgres
       - redis
     networks:
       - trybe-network
     restart: unless-stopped
-    command: celery -A app.core.celery worker --loglevel=info --concurrency=4
+    profiles:
+      - with-celery
 
-  # Celery Beat (Scheduled Tasks)
+  # Celery Beat (for scheduled tasks) - Optional
   celery-beat:
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: trybe-celery-beat
+    command: celery -A app.celery_app beat --loglevel=info
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER:-trybe_user}:${DB_PASSWORD:-trybe_password_dev}@postgres:5432/${DB_NAME:-trybe_db}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password_dev}@redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      - DATABASE_URL=postgresql+asyncpg://${DB_USER:-trybe}:${DB_PASSWORD:-trybe_password}@postgres:5432/${DB_NAME:-trybe}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
     volumes:
-      - ./app:/app/app
+      - .:/app
     depends_on:
       - postgres
       - redis
     networks:
       - trybe-network
     restart: unless-stopped
-    command: celery -A app.core.celery beat --loglevel=info
+    profiles:
+      - with-celery
 
-  # PgAdmin (Database Management - Optional)
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: trybe-pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@trybe.local}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
-      PGADMIN_CONFIG_SERVER_MODE: 'False'
+  # Nginx (reverse proxy) - Optional
+  nginx:
+    image: nginx:alpine
+    container_name: trybe-nginx
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
-      - pgadmin_data:/var/lib/pgadmin
-    ports:
-      - "${PGADMIN_PORT:-5050}:80"
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
     depends_on:
-      - postgres
+      - api
     networks:
       - trybe-network
     restart: unless-stopped
     profiles:
-      - tools
-
-  # Redis Commander (Redis Management - Optional)
-  redis-commander:
-    image: rediscommander/redis-commander:latest
-    container_name: trybe-redis-commander
-    environment:
-      REDIS_HOSTS: local:redis:6379:0:${REDIS_PASSWORD:-redis_password_dev}
-    ports:
-      - "${REDIS_COMMANDER_PORT:-8081}:8081"
-    depends_on:
-      - redis
-    networks:
-      - trybe-network
-    restart: unless-stopped
-    profiles:
-      - tools
-
-networks:
-  trybe-network:
-    driver: bridge
+      - with-nginx
 
 volumes:
   postgres_data:
     driver: local
   redis_data:
     driver: local
-  pgadmin_data:
+  elasticsearch_data:
     driver: local
+
+networks:
+  trybe-network:
+    driver: bridge

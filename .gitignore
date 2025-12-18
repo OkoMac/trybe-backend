@@ -1,12 +1,8 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -20,75 +16,58 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
 
-# PyInstaller
-*.manifest
-*.spec
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
 
-# Unit test / coverage reports
+# Environment Variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+.pytest_cache/
+.coverage
 htmlcov/
 .tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
 .hypothesis/
-.pytest_cache/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# IPython
-profile_default/
-ipython_config.py
-
 # pyenv
 .python-version
 
-# pipenv
-Pipfile.lock
-
-# PEP 582
-__pypackages__/
-
-# Celery stuff
+# Celery
 celerybeat-schedule
 celerybeat.pid
 
@@ -97,24 +76,12 @@ celerybeat.pid
 
 # Environments
 .env
-.env.local
-.env.*.local
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
 
 # mypy
 .mypy_cache/
@@ -124,26 +91,54 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Firebase
+firebase-credentials.json
+*-firebase-*.json
 
-# OS
+# Uploads
+uploads/
+media/
+static/media/
+
+# Alembic
+alembic/versions/*.pyc
+
+# macOS
 .DS_Store
-Thumbs.db
+.AppleDouble
+.LSOverride
 
-# Database
-*.db
-*.sqlite
+# Temporary files
+tmp/
+temp/
+*.tmp
 
-# Logs
-logs/
-*.log
+# Backup files
+*.bak
+*.backup
 
-# Docker volumes
-postgres_data/
-redis_data/
-pgadmin_data/
+# Editor directories and files
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-workspace
+
+# Node modules (if any frontend tools)
+node_modules/
+
+# Coverage
+.coverage
+coverage.xml
+*.cover
+
+# Documentation build
+docs/_build/
+site/
+
+# Redis dump
+dump.rdb
+
+# Elasticsearch data
+elasticsearch-data/
