@@ -25,7 +25,8 @@ from app.api.v1.endpoints import (
     resume,
     search,
     video_calls,
-    escrow
+    escrow,
+    swipe
 )
 
 api_router = APIRouter()
@@ -189,4 +190,11 @@ api_router.include_router(
     escrow.router,
     prefix="/escrow",
     tags=["Payment Escrow"]
+)
+
+# Swipe Interface routes (Mobile-First)
+api_router.include_router(
+    swipe.router,
+    prefix="/swipe",
+    tags=["Swipe Interface (Mobile)"]
 )
